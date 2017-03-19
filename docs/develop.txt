@@ -1,0 +1,90 @@
+=== Developer Info ===
+
+Required libraries:
+There are only two; one is the SDL (Simple DirectMedia Library or somesuch), should be version 1.2 or higher. This is for creating and managing windows under different operating systems.
+The other is, of course, OpenGL, which should be 2.0 or higher (may need to be 2.1?) If the OpenGL version is not high enough, everything will compile but fail to link.
+Makefile usage is trivial: make, make clean.
+
+
+
+**************************************************************************************************
+What is a lot less trivial is the overall operation of the program. 
+Start off by reading the paper, which can be found at
+http://arxiv.org/abs/0811.2055
+Next, read the format.txt file to understand what sort of data the program is working with.
+**************************************************************************************************
+
+
+
+Now, the paper is rather short on details, but I have provided below a detailed description of the program's process flow.
+
+
+Render thread:
+
+Initialization
+- Parse command line, config files
+- Open (not read!) block data files
+- Spawn off separate block loader threads, one per dir
+- Main Render function:
+--- Initialize screen via SDL
+--- Initialize OpenGL, create textures, shaders, etc
+--- Loop:
+----- Recursively draw blocks to specified depth
+----- Free memory used by "dead" blocks
+----- Recompute block priorities based on new location/time
+----- Handle window events/process input
+----- Update state
+--- Cleanup rendering
+- Close files
+- Cleanup and quit
+
+
+
+Loading thread:
+*NOTE* : There is one of these threads per directory (aka per disk), so that no disks need to wait on each other.
+
+- Load root block; we know where in the file it is and we always want it loaded
+- Main loading loop:
+--- Get from priority class the block we most want to load (on our disk!)
+--- If not enough memory to load it:
+----- Make list of blocks we need to delete to load this one
+----- If score from loading outweighs total loss from deleting, then delete
+----- Put deleted blocks in free queue
+--- Set block flags to indicate we are loading its children
+--- Once loading complete, set pointers to newly loaded children
+--- Repeat until quit
+
+
+
+
+That's pretty much it. There are three parts that need elaborating, those being the priority, the loading, and the rendering.
+
+So, priority:
+'Priority' is just a name for how interested in a block we are. Consider it as the on-screen pixel radius of the block; a small block far away will have a very low priority, and a large block nearby will have a high one. It is also weighted by how distant the block is in time, so that a block in the near future will have higher priority than in the distant future.
+Thus, whenever we want to load blocks, we load the ones with the highest priority, where the resolution is most different from what we would like it to be. And whenever we release them, we release the ones we want the least. The mechanism by which this happens couldn't be simpler (and, in fact, could be much better). Regardless, the metric by which this is judged seems to work fairly well.
+Note that when blocks are freed, they are not freed from memory, just put into a list waiting to be freed. The render loop is the one that actually frees them, so that we can avoid accidentally deleting blocks currently being rendered.
+
+
+Loading:
+Each set of child blocks is stored on disk contiguously, so roughly eight blocks at a time (except for leaf nodes). If it is decided that a certain block's children should be loaded, the loader thread in charge of the disk those children are on will seek to the specified location and read the specified number of bytes. No information is contained in the parent about the size of each child; the loader reads the header of the first block to determine its size, skips it, reads the header of the second block, etc... Once it has found all eight (or fewer) child blocks, it sets the pointers of the parent block to point to the child blocks' memory locations.
+Upon deletion, the parents' pointers are set to 0 to indicate the children shouldn't be drawn, but the children's (contiguous) memory is not freed until the rendering thread frees them. The block loader has absolutely no concept whatsoever of the data contained within the blocks, only of the block headers; even for the block headers, it only really cares about the tree structure of the blocks.
+
+
+Rendering:
+This is where the data format actually comes into play. The rendering is actually somewhat sophisticated; there are a couple of buffers that help. The main one is just the floating-point accumulation buffer, where the squared densities of each point are summed for each pixel. Each point is rendered with a radial cubic density profile, properly normalized. That gives the brightness, and the squared densities times the velocity dispersions summed up at each pixel gives the velocity dispersion. The third channel is used to add up the squared densities of all selected points, to give us the ability to highlight them later.
+Next, we need to draw this buffer to the screen. We do this by first log-transforming the pixel values, and then doing an HSL transform on brightness and color to give us a fair representation of the color scale for the dispersion (this is per-pixel). The contents of the third selection channel are then used as a multiplier for the main pixel values. 
+So, that's how the raw values are converted to colors. As you saw in the format description, the pixel format contains data for two snapshots' worth, so that we can do smooth interpolation. The position is quadratically interpolated, the size linearly, and the density and such values are done via exponential interpolation (eg. c = exp(log(a)*(1-dt) + log(b)*dt) ).
+I suppose I should briefly describe the steps of the render process of a single block:
+1. Set OpenGL transform matrices to operate on particular block, by pushing a matrix onto the OpenGL stack.
+2. Set the main vertex shader and tell it where in memory it can find the individual vertex attributes.
+3. Tell OpenGL to draw all ~16000 points in a single batch.
+4. Vertex shader transforms a single point and interpolates all relevant attributes. It scales the on-screen size based on the current quality factor, the distance, and the interpolated size of the point. Also locks the screen coordinate and size to the nearest pixel, so that we can use precomputed normalization factors.
+5. Pixel shader just computes the (normalized) radial cubic function for intensities for each pixel.
+
+The overall drawing routine is none too complicated; each block is assigned a 'score' much the same way as for priority, and we do a depth-first recursion to draw all blocks above a certain threshold whose children are below said threshold. This threshold is the sscaling factor, which is determined either by manual or autoscaling,  and has the effect of deciding the overall render depth.
+
+
+That's pretty much it for the rendering itself, now the only remaining issue is the min-max computation, to compute the range of intensity values, so that we can properly scale the screen.
+The issue is that the GPU is capable of massively parallel computation, but that none of the individual stream processors can access global variables, and as a result there is no straightforward way of getting hte minimum and maximum values of the entire screen. On the CPU, this endeavor takes a good half-second or so, which is entirely infeasible.
+So, on the GPU, the solution is to render from texture to texture, each time reducing the size by a constant factor and having the output pixel values be the minima and maxima of the k^2 original pixel values. That is, if we reduce both width and height by 2, each pixel value in the output image will be the minimum and maximum (in the RGBA channels) of the corresponding 2x2 block in the previous image. This allows us to compute the min and max in under 25 milliseconds. 
+The actual min/max values used when rendering are not taken straight from the computed ones, since we only recalculate min/max every quarter second or so, and thus we transition smoothly from the old ones to the new ones to avoid flickering.

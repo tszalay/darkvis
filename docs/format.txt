@@ -1,0 +1,73 @@
+==== File Formats ====
+
+There are a few types of files that the program reads, and their formats are briefly described below. The specifics of each format can be found in the header file.
+
+
+Snapshot header:
+The header for a single snapshot/block file, contains metadata for the block file. Tells us which subfile the root block can be found in, as well as its location and size. 
+
+
+
+
+Block Files:
+These are the biggest, but also dead simple. Each file is just a bunch of blocks, and each block is a block header along with a variable number of block vertices. 
+
+
+
+Block format:
+
+uint16_t pos[3]; // block position, as fractions of tree bounds
+uint16_t depth; // size is TreeSize/(1<<depth)
+uint32_t count; // number of points following
+uint64_t childLocation; // location in file of first child
+uint64_t childLength; // length in file of all children (bytes)
+int16_t childFile; // which file contains child?
+int16_t childFlags; // bitwise flags telling us which children exist
+float mins[9]; // vx, vy, vz, ax, ay, az, hsml, density, veldisp
+float scales[9]; // ditto
+// note: these are only for use once loaded into memory, but they're
+// stored here so we can read completely sequentially
+// and they're stored as 4 bytes, just in case we're processing on opa cluster
+uint32_t childPtr[8]; // pointers to children, not set in this program
+
+
+
+Vertex format:
+
+// point ID for selection
+uint32_t pid;
+// these are quite essential, for quadratic interpolation
+uint16_t pos[3];
+uint16_t vel[3];
+uint16_t acc[3];
+// for following, we store current and next vals
+// and interpolate linearly
+// use only 8 bits, since range is 1...~30 pixels
+uint8_t hsml;
+uint8_t nhsml;
+// and these two
+uint16_t densq;
+uint16_t vdisp;
+uint16_t ndensq;
+uint16_t nvdisp;
+
+
+
+The following are used for selection and camera tracking, if available. They are loaded from disk on an as-needed basis.
+Halo data files:
+
+int32_t fofGroup; // the fof group index of this halo, in current snapshot
+int32_t mainProgenitor; // the main progenitor index in prev. snapshot
+int32_t mainDescendant; // main descendant in next snapshot
+// starting point index (not in bytes, just index) and count
+int32_t pointIndex;
+int32_t pointCount;
+// now here come the actual halo properties
+float pos[3];
+float vel[3];
+float acc[3];
+float radius;
+
+
+
+That should just about cover it; you should be able to figure out everything from these three readmes and the paper to give the big picture (see develop.txt for the link), and from the comments in the code.

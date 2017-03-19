@@ -1,0 +1,94 @@
+=== program usage ===
+
+As you will quickly realize, I didn't have the time to put a whole lot of effort into making the program user-friendly. Below are a few tips for how to use it, assuming you have the correct files, or at least to see what it does.
+
+the standard usage is just
+vis [-dat datafile.ini] [-cfg configfile.ini] [-v<p/b/r>]
+
+the -dat flag allows you to create multiple data configuration files, -cfg ditto for system config (though this is a little less useful). -v displays printf info for either rendering, blocks (loading), or priority (block scoring).
+
+if -dat is not specified, data.ini in the system directory is used; if -cfg is not specified, config.ini is default.
+
+
+
+=== data ini files ===
+
+ndirs, dir0...dirn-1 is obvious (max 8 or 16 or something)
+firstSnap: index of first snapshot to use
+lastSnap: index of last snapshot
+interval: load every kth snapshot
+vertexSize: erm should be 32, changing this needs accompanying changes in code
+
+
+
+=== config.ini ===
+
+zoomScale: scale factor for mouse motion for zooming
+lookScale: same, for looking
+timeScale: most important... value of loga/sec, since time moves in loga units.
+
+minBlockPixels: arbitrary scaling factor or something
+camFactor: amount to drop the quality by when looking/panning
+animFactor: same, for animating
+forceMin: overall minimum value to use in rendering, overriding autoscaling
+minFPS: FPS to use at highest, quality=1
+maxFPS: FPS to use at lowest, quality=0
+recdt: timestep *in seconds* between frames, in a saved rendering run
+
+maxBytes: the most critical flag!e sets the maximum number of bytes the program can allocate without paging (should leave a good 500-800 GB off total memory)
+
+
+
+=== program usage ===
+
+Mouse control:
+      The left cursor is used to click, with the Ctrl, Shift, and Alt keys as modifiers (explained below). To rotate the camera around a fixed point, press and hold the right mouse button while moving the mouse. To zoom, either press and hold both mouse buttons and move the mouse vertically, or just use the mouse wheel.
+
+Camera focus:
+      If the subhalo metadata is included with the block files, you can click on subhalos to select all of their constituent points. Holding the shift key while clicking will add to the existing selection; up to around a million points can be selected at any time. Holding the ctrl or alt keys (any of them) while clicking will cause the camera focus to jump to the selected subhalo. The program will attempt to track the subhalo through the merger tree over time, and it is usually successful. Clicking in empty space will either clear the selection or unbind the camera (and will instead lock it to the simulation bounding box).
+
+Time control:
+
+Right arrow: Momentary play (while pressed)
+Left arrow: Play backwards
+Up/down arrows: Play normal/backwards at 5x speed
+Space: Toggle play
+Backspace: Toggle play backwards
+Page Up: Skip forward a snapshot
+Page Down: Skip back one
+Home: Beginning of simulation
+End: End of simulation
+
+
+
+Render quality control:
+
+1...0 keys: Set render quality from 0.0 ... 1.0
+P key: Toggle drawing of points
+B key: Toggle drawing of boxes
+F key: Toggle loading freeze (will not load any new data while on)
+A key: Toggle framerate autoscaling (on by default)
+= key or + key: Increase draw depth (must push repeatedly when autoscale off)
+- key: Decrease draw depth
+
+
+Quality/framerate autoscaling:
+	The quality, a scalar from 0 to 1, sets the point sizes as a fraction of their actual size, and sets the desired framerate as a range from the minimum to the maximum (in settings). The quality is adjusted when animating or moving the camera. Autoscaling dynamically changes the rendering depth to achieve the desired framerate, but also often makes things look like crap. To disable it, press "a" and then use +/- to set the autoscaling as desired.
+
+
+
+Exporting controls:
+
+T key: Take single screenshot
+K key: Add keyframe
+R key: Trial record
+Ctrl+R: Output record
+
+
+Recording:
+	All files are saved to ~/caps or something like that. You must add keyframes periodically, and the camera location and target (and render quality and depth) are spline-interpolated between each subsequent keyframe. Pressing "R" starts playing the recording along the spline from the current keyframe; pressing Ctrl+R will do the same, but also save each frame to a bitmap file. Each timestep is constant, so you can adjust the render settings to have it look as nice as you like.
+
+
+
+Alright, that's all for the keys. Oh, and press Escape to quit the program (obviously).
+
